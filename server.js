@@ -239,6 +239,11 @@ app.get('/admin', (req, res) => {
     </div>
 
     <div id="tableWrap">Загрузка…</div>
+
+    <div class="row" style="margin-top:26px; border-top:1px solid #ddd; padding-top:16px;">
+      <button onclick="resetAll()" style="background:#c62828;">🗑 Очистить все ответы</button>
+    </div>
+    <div id="resetMsg"></div>
   </div>
 
 <script>
@@ -286,6 +291,29 @@ async function load() {
   });
   html += '</table>';
   wrap.innerHTML = html;
+}
+
+async function resetAll() {
+  const sure = confirm('Точно удалить ВСЕ ответы участников? Это действие нельзя отменить.');
+  if (!sure) return;
+  const msg = document.getElementById('resetMsg');
+  msg.textContent = 'Удаляем...';
+  try {
+    const r = await fetch('/api/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: PIN })
+    });
+    if (r.ok) {
+      msg.textContent = 'Готово — все ответы удалены.';
+      document.getElementById('answer').value = '';
+      load();
+    } else {
+      msg.textContent = 'Не удалось удалить.';
+    }
+  } catch (err) {
+    msg.textContent = 'Ошибка сети.';
+  }
 }
 
 async function saveAnswer() {
@@ -367,6 +395,20 @@ app.post('/api/answer', async (req, res) => {
        ON CONFLICT (key) DO UPDATE SET value = $1`,
       [String(answer)]
     );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера.' });
+  }
+});
+
+app.post('/api/reset', async (req, res) => {
+  if (req.body.pin !== ADMIN_PASSWORD) {
+    return res.status(401).json({ error: 'Неверный код.' });
+  }
+  try {
+    await pool.query('DELETE FROM guesses');
+    await pool.query(`DELETE FROM settings WHERE key = 'correct_answer'`);
     res.json({ ok: true });
   } catch (err) {
     console.error(err);
