@@ -110,8 +110,8 @@ app.get('/', (req, res) => {
         <polyline points="20 6 9 17 4 12"></polyline>
       </svg>
     </div>
-    <h2>Ответ принят!</h2>
-    <p class="sub">Спасибо за участие — удачи в угадывании 🎉</p>
+    <h2>Ответ принят! ☀️</h2>
+    <p class="sub">Спасибо за участие, солнышко!</p>
     <div class="receipt">
       <div><span>Участник</span><span id="rName"></span></div>
       <div><span>Ваш ответ</span><span id="rGuess"></span></div>
@@ -382,3 +382,4 @@ initDb()
     console.error('Failed to init DB:', err);
     process.exit(1);
   });
+
