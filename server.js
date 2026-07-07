@@ -54,23 +54,69 @@ app.get('/', (req, res) => {
   button:disabled{ opacity:.6; }
   #msg{ margin-top:14px; font-size:14px; }
   #msg.err{ color:#c62828; }
-  #msg.ok{ color:#2e7d32; font-weight:bold; }
+
+  #success{
+    display:none;
+    text-align:center;
+    padding:30px 10px;
+    animation: fadeIn .35s ease;
+  }
+  @keyframes fadeIn{
+    from{ opacity:0; transform:translateY(8px); }
+    to{ opacity:1; transform:translateY(0); }
+  }
+  .checkmark{
+    width:72px; height:72px;
+    border-radius:50%;
+    background:#2e7d32;
+    display:flex; align-items:center; justify-content:center;
+    margin:0 auto 20px;
+  }
+  .checkmark svg{ width:38px; height:38px; }
+  #success h2{ font-size:20px; margin:0 0 8px; }
+  #success .sub{ color:#555; font-size:15px; margin:0 0 22px; }
+  .receipt{
+    background:#f4f4f4;
+    border-radius:10px;
+    padding:16px;
+    text-align:left;
+    font-size:14px;
+  }
+  .receipt div{ display:flex; justify-content:space-between; padding:4px 0; }
+  .receipt div span:first-child{ color:#777; }
+  .receipt div span:last-child{ font-weight:bold; }
 </style>
 </head>
 <body>
-  <h1>Сколько шариков в колбе?</h1>
-  <p>Посмотрите на колбу и оставьте своё предположение.</p>
+  <div id="formScreen">
+    <h1>Сколько шариков в колбе?</h1>
+    <p>Посмотрите на колбу и оставьте своё предположение.</p>
 
-  <form id="f">
-    <label>Имя</label>
-    <input type="text" id="name" required>
-    <label>Фамилия</label>
-    <input type="text" id="surname" required>
-    <label>Ваше предположение (число)</label>
-    <input type="number" id="guess" min="0" required>
-    <button type="submit" id="btn">Отправить ответ</button>
-    <div id="msg"></div>
-  </form>
+    <form id="f">
+      <label>Имя</label>
+      <input type="text" id="name" required>
+      <label>Фамилия</label>
+      <input type="text" id="surname" required>
+      <label>Ваше предположение (число)</label>
+      <input type="number" id="guess" min="0" required>
+      <button type="submit" id="btn">Отправить ответ</button>
+      <div id="msg"></div>
+    </form>
+  </div>
+
+  <div id="success">
+    <div class="checkmark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+    </div>
+    <h2>Ответ принят!</h2>
+    <p class="sub">Спасибо за участие — удачи в угадывании 🎉</p>
+    <div class="receipt">
+      <div><span>Участник</span><span id="rName"></span></div>
+      <div><span>Ваш ответ</span><span id="rGuess"></span></div>
+    </div>
+  </div>
 
 <script>
 document.getElementById('f').addEventListener('submit', async (e) => {
@@ -80,11 +126,11 @@ document.getElementById('f').addEventListener('submit', async (e) => {
   msg.className = ''; msg.textContent = '';
   btn.disabled = true; btn.textContent = 'Отправляем...';
 
-  const body = {
-    name: document.getElementById('name').value.trim(),
-    surname: document.getElementById('surname').value.trim(),
-    guess: parseInt(document.getElementById('guess').value, 10)
-  };
+  const nameVal = document.getElementById('name').value.trim();
+  const surnameVal = document.getElementById('surname').value.trim();
+  const guessVal = parseInt(document.getElementById('guess').value, 10);
+
+  const body = { name: nameVal, surname: surnameVal, guess: guessVal };
 
   try {
     const r = await fetch('/submit', {
@@ -94,9 +140,10 @@ document.getElementById('f').addEventListener('submit', async (e) => {
     });
     const data = await r.json();
     if (r.ok) {
-      msg.className = 'ok';
-      msg.textContent = 'Спасибо! Ваш ответ записан.';
-      document.getElementById('f').style.display = 'none';
+      document.getElementById('rName').textContent = nameVal + ' ' + surnameVal;
+      document.getElementById('rGuess').textContent = guessVal;
+      document.getElementById('formScreen').style.display = 'none';
+      document.getElementById('success').style.display = 'block';
     } else {
       msg.className = 'err';
       msg.textContent = data.error || 'Ошибка отправки.';
