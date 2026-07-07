@@ -1,0 +1,16 @@
+{
+  "name": "guess-the-jar",
+  "version": "1.0.0",
+  "description": "Simple guess-the-number-of-marbles app for a live event",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.11.5"
+  }
+}
