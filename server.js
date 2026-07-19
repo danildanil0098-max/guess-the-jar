@@ -1,9 +1,12 @@
 const express = require('express');
 const { Pool } = require('pg');
+const cookieParser = require('cookie-parser');
+const crypto = require('crypto');
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '1979';
@@ -31,6 +34,12 @@ async function initDb() {
       value TEXT
     );
   `);
+  // Migration: add device_id column for existing tables created before this feature
+  await pool.query(`ALTER TABLE guesses ADD COLUMN IF NOT EXISTS device_id TEXT;`);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS guesses_device_id_idx
+    ON guesses (device_id) WHERE device_id IS NOT NULL;
+  `);
 }
 
 function normalizeKey(name, surname) {
@@ -39,12 +48,19 @@ function normalizeKey(name, surname) {
 
 // ---------- PUBLIC FORM PAGE ----------
 app.get('/', (req, res) => {
+  if (!req.cookies.device_id) {
+    res.cookie('device_id', crypto.randomUUID(), {
+      maxAge: 1000 * 60 * 60 * 24 * 365, // 1 year
+      httpOnly: true,
+      sameSite: 'lax'
+    });
+  }
   res.send(`<!DOCTYPE html>
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Угадай сколько шариков</title>
+<title>Угадай сколько конфет</title>
 <style>
   body{ font-family: Arial, sans-serif; max-width:420px; margin:40px auto; padding:0 16px; color:#222; }
   h1{ font-size:22px; }
@@ -89,8 +105,8 @@ app.get('/', (req, res) => {
 </head>
 <body>
   <div id="formScreen">
-    <h1>Сколько шариков в колбе?</h1>
-    <p>Посмотрите на колбу и оставьте своё предположение.</p>
+    <h1>Сколько конфет в колбе?</h1>
+    <p>Посмотрите на колбу и оставьте своё предположение — сколько там конфеток.</p>
 
     <form id="f">
       <label>Имя</label>
@@ -173,13 +189,36 @@ app.post('/submit', async (req, res) => {
     }
     const key = normalizeKey(name, surname);
 
+    // Identify the device via a long-lived cookie, so the same phone/browser
+    // can't submit twice even with a different name.
+    // Note: clearing cookies, using incognito, or a different device/browser
+    // will bypass this — it's a soft deterrent for casual re-submits, not
+    // airtight security.
+    let deviceId = req.cookies.device_id;
+    if (!deviceId) {
+      deviceId = crypto.randomUUID();
+    }
+    res.cookie('device_id', deviceId, {
+      maxAge: 1000 * 60 * 60 * 24 * 365,
+      httpOnly: true,
+      sameSite: 'lax'
+    });
+
+    const deviceCheck = await pool.query(
+      'SELECT id FROM guesses WHERE device_id = $1 LIMIT 1',
+      [deviceId]
+    );
+    if (deviceCheck.rows.length) {
+      return res.status(409).json({ error: 'С этого устройства ответ уже был отправлен.' });
+    }
+
     await pool.query(
-      'INSERT INTO guesses (name, surname, name_key, guess) VALUES ($1, $2, $3, $4)',
-      [name.trim(), surname.trim(), key, guessNum]
+      'INSERT INTO guesses (name, surname, name_key, guess, device_id) VALUES ($1, $2, $3, $4, $5)',
+      [name.trim(), surname.trim(), key, guessNum, deviceId]
     );
     res.json({ ok: true });
   } catch (err) {
-    if (err.code === '23505') { // unique_violation
+    if (err.code === '23505') { // unique_violation (same name_key or same device_id)
       return res.status(409).json({ error: 'Вы уже отправили ответ.' });
     }
     console.error(err);
@@ -195,7 +234,7 @@ app.get('/admin', (req, res) => {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<title>Админ — Угадай сколько шариков</title>
+<title>Админ — Угадай сколько конфет</title>
 <style>
   body{ font-family: Arial, sans-serif; max-width:640px; margin:30px auto; padding:0 16px; color:#222; }
   h1{ font-size:20px; }
@@ -424,4 +463,5 @@ initDb()
     console.error('Failed to init DB:', err);
     process.exit(1);
   });
+
 
