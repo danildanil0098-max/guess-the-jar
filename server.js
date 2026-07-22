@@ -34,12 +34,15 @@ async function initDb() {
       value TEXT
     );
   `);
-  // Migration: add device_id column (kept for reference, no longer unique —
-  // multiple paid entries per person/device are now allowed)
   await pool.query(`ALTER TABLE guesses ADD COLUMN IF NOT EXISTS device_id TEXT;`);
-  // Drop old uniqueness restrictions from earlier versions, if present
-  await pool.query(`ALTER TABLE guesses DROP CONSTRAINT IF EXISTS guesses_name_key_key;`);
-  await pool.query(`DROP INDEX IF EXISTS guesses_device_id_idx;`);
+  // Re-enforce one-entry-per-person and one-entry-per-device
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS guesses_name_key_idx ON guesses (name_key);
+  `);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS guesses_device_id_idx
+    ON guesses (device_id) WHERE device_id IS NOT NULL;
+  `);
 }
 
 function normalizeKey(name, surname) {
@@ -132,16 +135,9 @@ app.get('/', (req, res) => {
       <div><span>Участник</span><span id="rName"></span></div>
       <div><span>Ваш ответ</span><span id="rGuess"></span></div>
     </div>
-    <button onclick="playAgain()" style="margin-top:20px;">Попробовать ещё раз</button>
   </div>
 
 <script>
-function playAgain() {
-  document.getElementById('guess').value = '';
-  document.getElementById('success').style.display = 'none';
-  document.getElementById('formScreen').style.display = 'block';
-}
-
 document.getElementById('f').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = document.getElementById('btn');
@@ -196,17 +192,27 @@ app.post('/submit', async (req, res) => {
     }
     const key = normalizeKey(name, surname);
 
-    // No restriction on repeat entries — each paid attempt is recorded
-    // separately, so the same person/device can submit as many times as
-    // they've paid for.
+    // Identify the device via a long-lived cookie, so the same phone/browser
+    // can't submit twice even with a different name.
+    // Note: clearing cookies, using incognito, or a different device/browser
+    // will bypass this — it's a soft deterrent for casual re-submits, not
+    // airtight security.
     let deviceId = req.cookies.device_id;
     if (!deviceId) {
       deviceId = crypto.randomUUID();
-      res.cookie('device_id', deviceId, {
-        maxAge: 1000 * 60 * 60 * 24 * 365,
-        httpOnly: true,
-        sameSite: 'lax'
-      });
+    }
+    res.cookie('device_id', deviceId, {
+      maxAge: 1000 * 60 * 60 * 24 * 365,
+      httpOnly: true,
+      sameSite: 'lax'
+    });
+
+    const deviceCheck = await pool.query(
+      'SELECT id FROM guesses WHERE device_id = $1 LIMIT 1',
+      [deviceId]
+    );
+    if (deviceCheck.rows.length) {
+      return res.status(409).json({ error: 'С этого устройства ответ уже был отправлен.' });
     }
 
     await pool.query(
@@ -215,6 +221,9 @@ app.post('/submit', async (req, res) => {
     );
     res.json({ ok: true });
   } catch (err) {
+    if (err.code === '23505') { // unique_violation (same name_key or same device_id)
+      return res.status(409).json({ error: 'Вы уже отправили ответ.' });
+    }
     console.error(err);
     res.status(500).json({ error: 'Внутренняя ошибка сервера.' });
   }
@@ -457,5 +466,3 @@ initDb()
     console.error('Failed to init DB:', err);
     process.exit(1);
   });
-
-
